@@ -55,13 +55,12 @@ suspend fun postMatrixMultiplicationRequest(matrix1: Matrix, matrix2: Matrix): H
     return response
 }
 
-@OptIn(InternalAPI::class)
 suspend fun main(){
     val matrix1 = Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
-    val matrix2 = Matrix(2, 2, listOf(listOf(5, 6), listOf(7, 8)))
+    val matrix2 = Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
     val response = postMatrixMultiplicationRequest(matrix1, matrix2)
 //    val json = response.
-    val finalResponse: Matrix = response.body()
+    val finalResponse: MatrixMultiplicationResponse = response.body()
 
     println(finalResponse)
 }
