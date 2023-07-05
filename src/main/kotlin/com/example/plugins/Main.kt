@@ -18,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.random.Random
 
 @Serializable
 data class Matrix(val rows: Int, val columns: Int, val values: List<List<Int>>)
@@ -59,10 +60,19 @@ suspend fun postMatrixMultiplicationRequest(matrix1: Matrix, matrix2: Matrix): H
     return response
 }
 
+fun generateRandomMatrix(rows: Int, columns: Int): Matrix {
+    val values = List(rows) {
+        List(columns) {
+            Random.nextInt(1, 10) // Generate random values between 1 and 10
+        }
+    }
+    return Matrix(rows, columns, values)
+}
+
 suspend fun main(){
-    val matrix1 = Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
-    val matrix2 =Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
-    val numOfConcurrentRequests = 1000000
+    val matrix1 = generateRandomMatrix(2, 2)
+    val matrix2 = generateRandomMatrix(2, 2)
+    val numOfConcurrentRequests = 10
     val responses = mutableListOf<Deferred<HttpResponse>>()
     val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -80,8 +90,9 @@ suspend fun main(){
         responses.awaitAll()
     }
     responses.forEach { response ->
-        val finalResponse: MatrixMultiplicationResponse? = response.body()
-        println(finalResponse)
+        val finalResponse: HttpResponse = response.await()
+        val result: MatrixMultiplicationResponse? = finalResponse.body<MatrixMultiplicationResponse?>()
+        println(result?.result)
     }
 
 }
