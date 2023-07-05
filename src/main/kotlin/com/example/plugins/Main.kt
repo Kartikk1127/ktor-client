@@ -10,6 +10,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 //import io.ktor.server.plugins.contentnegotiation.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -57,10 +61,27 @@ suspend fun postMatrixMultiplicationRequest(matrix1: Matrix, matrix2: Matrix): H
 
 suspend fun main(){
     val matrix1 = Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
-    val matrix2 = Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
-    val response = postMatrixMultiplicationRequest(matrix1, matrix2)
-//    val json = response.
-    val finalResponse: MatrixMultiplicationResponse = response.body()
+    val matrix2 =Matrix(2, 2, listOf(listOf(1, 2), listOf(3, 4)))
+    val numOfConcurrentRequests = 1000000
+    val responses = mutableListOf<Deferred<HttpResponse>>()
+    val client = HttpClient(CIO) {
+        install(ContentNegotiation) {
+            json(Json {
+                prettyPrint = true
+                isLenient = true
+            })
+        }
+    }
+    val job = coroutineScope {
+        repeat(numOfConcurrentRequests) {
+            val response = async{postMatrixMultiplicationRequest(matrix1, matrix2)}
+            responses.add(response)
+        }
+        responses.awaitAll()
+    }
+    responses.forEach { response ->
+        val finalResponse: MatrixMultiplicationResponse? = response.body()
+        println(finalResponse)
+    }
 
-    println(finalResponse)
 }
