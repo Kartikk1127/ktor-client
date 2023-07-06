@@ -69,10 +69,9 @@ fun generateRandomMatrix(rows: Int, columns: Int): Matrix {
     return Matrix(rows, columns, values)
 }
 
-suspend fun main(){
-    val matrix1 = generateRandomMatrix(2, 2)
-    val matrix2 = generateRandomMatrix(2, 2)
-    val numOfConcurrentRequests = 10
+suspend fun main() {
+    val numOfConcurrentRequests = 10000
+
     val responses = mutableListOf<Deferred<HttpResponse>>()
     val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -82,17 +81,22 @@ suspend fun main(){
             })
         }
     }
+
     val job = coroutineScope {
         repeat(numOfConcurrentRequests) {
-            val response = async{postMatrixMultiplicationRequest(matrix1, matrix2)}
+            val matrix1 = generateRandomMatrix(2, 2)
+            println("Matrix 1 is" + matrix1)
+            val matrix2 = generateRandomMatrix(2, 2)
+            println("Matrix 2 is" + matrix2)
+            val response = async { postMatrixMultiplicationRequest(matrix1, matrix2) }
             responses.add(response)
         }
         responses.awaitAll()
     }
+
     responses.forEach { response ->
         val finalResponse: HttpResponse = response.await()
         val result: MatrixMultiplicationResponse? = finalResponse.body<MatrixMultiplicationResponse?>()
         println(result?.result)
     }
-
 }
