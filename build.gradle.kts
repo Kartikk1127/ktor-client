@@ -28,4 +28,6 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
     implementation ("ch.qos.logback:logback-classic:1.2.6")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
+    implementation("org.jfree:jfreechart:1.5.0")
+
 }

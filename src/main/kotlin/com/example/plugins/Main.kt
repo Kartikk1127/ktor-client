@@ -18,6 +18,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.jfree.chart.ChartFactory
+import org.jfree.chart.ChartUtils
+import org.jfree.chart.JFreeChart
+import org.jfree.chart.plot.PlotOrientation
+import org.jfree.data.category.DefaultCategoryDataset
+import java.io.File
 import kotlin.random.Random
 
 @Serializable
@@ -33,11 +39,6 @@ data class MatrixMultiplicationRequest(
 data class MatrixMultiplicationResponse(
     val result: Matrix
 )
-
-
-
-
-
 
 suspend fun postMatrixMultiplicationRequest(matrix1: Matrix, matrix2: Matrix): HttpResponse{
     val client = HttpClient(CIO){
@@ -70,25 +71,38 @@ fun generateRandomMatrix(rows: Int, columns: Int): Matrix {
 }
 
 suspend fun main() {
-    val numOfConcurrentRequests = 10000
+    val numOfConcurrentRequests = 100
 
     val responses = mutableListOf<Deferred<HttpResponse>>()
-    val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json {
-                prettyPrint = true
-                isLenient = true
-            })
-        }
-    }
-
+//    val client = HttpClient(CIO) {
+//        install(ContentNegotiation) {
+//            json(Json {
+//                prettyPrint = true
+//                isLenient = true
+//            })
+//        }
+//    }
+//    val startTime = System.currentTimeMillis();
+//    val totalTime = 1;
+//    val endTime = startTime + (totalTime * 1000)
+    val responseTimeList = mutableListOf<Long>()
     val job = coroutineScope {
         repeat(numOfConcurrentRequests) {
             val matrix1 = generateRandomMatrix(2, 2)
             println("Matrix 1 is" + matrix1)
             val matrix2 = generateRandomMatrix(2, 2)
             println("Matrix 2 is" + matrix2)
-            val response = async { postMatrixMultiplicationRequest(matrix1, matrix2) }
+            val starting = System.currentTimeMillis()
+            val response = async {
+                val result = postMatrixMultiplicationRequest(matrix1, matrix2)
+                val currentTime = System.currentTimeMillis()
+                responseTimeList.add(currentTime-starting)
+                result
+            }
+//            val ending = System.currentTimeMillis()
+//            val latency = response.second-starting
+//            responseTimeList.add(latency)
+//            responseTimeList.add(System.currentTimeMillis())
             responses.add(response)
         }
         responses.awaitAll()
@@ -99,4 +113,28 @@ suspend fun main() {
         val result: MatrixMultiplicationResponse? = finalResponse.body<MatrixMultiplicationResponse?>()
         println(result?.result)
     }
+
+    val dataSet = DefaultCategoryDataset()
+    responseTimeList.forEachIndexed { index, responseTime ->
+        dataSet.addValue(responseTime, "Response Time", "Request ${index + 1}")
+    }
+
+    val chart: JFreeChart = ChartFactory.createBarChart(
+        "Response Time Distribution",
+        "Request",
+        "Response Time (ms)",
+        dataSet,
+        PlotOrientation.VERTICAL,
+        true,
+        true,
+        false
+    )
+
+    val output = File("chart.png")
+    ChartUtils.saveChartAsPNG(output,chart,800,600)
+
+    println("Minimum response time : ${responseTimeList.min()} \n Maximum response time :  ${responseTimeList.max()} \n" +
+            " Average response time : ${responseTimeList.average()}");
+
+//    println(chart.plot)
 }
