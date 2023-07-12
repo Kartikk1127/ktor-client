@@ -1,33 +1,20 @@
-package com.example.plugins
-
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.http.*
-import io.ktor.client.HttpClient
-import io.ktor.client.call.*
+import io.ktor.http.ContentType.Application.Json
 import io.ktor.serialization.kotlinx.json.*
-import io.ktor.util.*
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-//import io.ktor.server.plugins.contentnegotiation.*
+import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.jfree.chart.ChartFactory
-import org.jfree.chart.ChartUtils
-import org.jfree.chart.JFreeChart
-import org.jfree.chart.plot.PlotOrientation
 import org.jfree.data.category.DefaultCategoryDataset
-import java.io.File
+import java.time.LocalDateTime
 import kotlin.random.Random
 
 @Serializable
-data class Matrix(val rows: Int, val columns: Int, val values: List<List<Int>>)
+data class Matrix(val rows: Int, val cols: Int, val values: List<List<Int>>)
 
 @Serializable
 data class MatrixMultiplicationRequest(
@@ -35,28 +22,79 @@ data class MatrixMultiplicationRequest(
     val matrix2: Matrix
 )
 
-@Serializable
-data class MatrixMultiplicationResponse(
-    val result: Matrix
-)
-
-suspend fun postMatrixMultiplicationRequest(matrix1: Matrix, matrix2: Matrix): HttpResponse{
-    val client = HttpClient(CIO){
-        install(ContentNegotiation){
+suspend fun main() {
+    val client = HttpClient(CIO) {
+        install(ContentNegotiation) {
             json(Json {
                 prettyPrint = true
                 isLenient = true
             })
         }
-    } //a client is represented by the http client class
+    }
+    val responseList = mutableListOf<Deferred<HttpResponse>>()
+    val successfullRequestList = mutableListOf<HttpResponse>()
+    val latencyList = mutableListOf<Long>()
+
+    val totalTime = 60
+    val totalRequests = 180000
+    val requestsPerSecond = totalRequests / totalTime
+
+    var requestCount = 0
+    val startTime = System.currentTimeMillis()
+    val endTime = startTime + totalTime * 1000
+
+    while (System.currentTimeMillis() < endTime && requestCount < totalRequests) {
+        coroutineScope {
+            val remainingRequests = totalRequests - requestCount
+            val requestsToSend = minOf(requestsPerSecond, remainingRequests)
+
+            repeat(requestsToSend) {
+                val matrix1 = generateRandomMatrix(2, 2)
+                val matrix2 = generateRandomMatrix(2, 2)
+                val response = async {
+                    postMatrixMultiplication(client, matrix1, matrix2, latencyList, successfullRequestList)
+                }
+                responseList.add(response)
+                requestCount++
+            }
+            delay(1)
+        }
+    }
+
+    responseList.awaitAll()
+
+    println("Total requests sent: $requestCount")
+    println("Minimum response time: ${latencyList.min()} ms")
+    println("Maximum response time: ${latencyList.max()} ms")
+    println("Average response time: ${latencyList.average()} ms")
+    println("Latency list: $latencyList")
+    println("Successful requests: ${successfullRequestList.size}")
+
+    client.close()
+}
+
+suspend fun postMatrixMultiplication(
+    client: HttpClient,
+    matrix1: Matrix,
+    matrix2: Matrix,
+    latency: MutableList<Long>,
+    successfullList: MutableList<HttpResponse>
+): HttpResponse {
     val request = MatrixMultiplicationRequest(matrix1, matrix2)
-//    val requestBody = Matrix(matrix1.rows, matrix2.columns, matrix1.values)
-    val response: HttpResponse = client.post("http://localhost:8080/api/matrix-multiply"){
+    val startTime = System.currentTimeMillis()
+    val response: HttpResponse = client.post("http://localhost:8080/api/matrix-multiply") {
         contentType(ContentType.Application.Json)
         setBody(request)
     }
-    println(response.status)
-    client.close()
+    val endTime = System.currentTimeMillis()
+
+    if (response.status == HttpStatusCode.OK) {
+        successfullList.add(response)
+        latency.add(endTime - startTime)
+    } else {
+//        println(response.status)
+    }
+    println(response.bodyAsText())
 
     return response
 }
@@ -70,71 +108,27 @@ fun generateRandomMatrix(rows: Int, columns: Int): Matrix {
     return Matrix(rows, columns, values)
 }
 
-suspend fun main() {
-    val numOfConcurrentRequests = 100
-
-    val responses = mutableListOf<Deferred<HttpResponse>>()
-//    val client = HttpClient(CIO) {
-//        install(ContentNegotiation) {
-//            json(Json {
-//                prettyPrint = true
-//                isLenient = true
-//            })
-//        }
-//    }
-//    val startTime = System.currentTimeMillis();
-//    val totalTime = 1;
-//    val endTime = startTime + (totalTime * 1000)
-    val responseTimeList = mutableListOf<Long>()
-    val job = coroutineScope {
-        repeat(numOfConcurrentRequests) {
-            val matrix1 = generateRandomMatrix(2, 2)
-            println("Matrix 1 is" + matrix1)
-            val matrix2 = generateRandomMatrix(2, 2)
-            println("Matrix 2 is" + matrix2)
-            val starting = System.currentTimeMillis()
-            val response = async {
-                val result = postMatrixMultiplicationRequest(matrix1, matrix2)
-                val currentTime = System.currentTimeMillis()
-                responseTimeList.add(currentTime-starting)
-                result
-            }
-//            val ending = System.currentTimeMillis()
-//            val latency = response.second-starting
-//            responseTimeList.add(latency)
-//            responseTimeList.add(System.currentTimeMillis())
-            responses.add(response)
-        }
-        responses.awaitAll()
-    }
-
-    responses.forEach { response ->
-        val finalResponse: HttpResponse = response.await()
-        val result: MatrixMultiplicationResponse? = finalResponse.body<MatrixMultiplicationResponse?>()
-        println(result?.result)
-    }
 
     val dataSet = DefaultCategoryDataset()
-    responseTimeList.forEachIndexed { index, responseTime ->
-        dataSet.addValue(responseTime, "Response Time", "Request ${index + 1}")
-    }
+//    responseTimeList.forEachIndexed { index, responseTime ->
+//        dataSet.addValue(responseTime, "Response Time", "Request ${index + 1}")
+//    }
 
-    val chart: JFreeChart = ChartFactory.createBarChart(
-        "Response Time Distribution",
-        "Request",
-        "Response Time (ms)",
-        dataSet,
-        PlotOrientation.VERTICAL,
-        true,
-        true,
-        false
-    )
+//    val chart: JFreeChart = ChartFactory.createBarChart(
+//        "Response Time Distribution",
+//        "Request",
+//        "Response Time (ms)",
+//        dataSet,
+//        PlotOrientation.VERTICAL,
+//        true,
+//        true,
+//        false
+//    )
 
-    val output = File("chart.png")
-    ChartUtils.saveChartAsPNG(output,chart,800,600)
-
-    println("Minimum response time : ${responseTimeList.min()} \n Maximum response time :  ${responseTimeList.max()} \n" +
-            " Average response time : ${responseTimeList.average()}");
+//    val output = File("chart.png")
+//    ChartUtils.saveChartAsPNG(output,chart,800,600)
+//
+//    println("Minimum response time : ${responseTimeList.min()} \n Maximum response time :  ${responseTimeList.max()} \n" +
+//            " Average response time : ${responseTimeList.average()}");
 
 //    println(chart.plot)
-}
